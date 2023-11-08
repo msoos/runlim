@@ -61,6 +61,7 @@ struct Process
   long sampled;
   double time;
   double memory;
+  char name[1000];
   Process * next_process;
   Process * first_child;
   Process * last_child;
@@ -599,16 +600,16 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static volatile int killing;
 
 static void
-add_process (pid_t pid, pid_t ppid, double time, double memory)
+add_process (pid_t pid, pid_t ppid, double time, double memory, char* name)
 {
   const char * type;
   Process * p;
 
   assert (0 < pid);
-  assert (0 <= ppid); 
+  assert (0 <= ppid);
 
   p = find_process (pid);
-  
+
   if (p->active)
     {
       p->new = 0;
@@ -635,7 +636,7 @@ add_process (pid_t pid, pid_t ppid, double time, double memory)
       p->time = time;
       p->memory = memory;
       p->next_process = 0;
-
+      memcpy(p->name, name, 1000);
       if (last_active_process)
 	last_active_process->next_process = p;
       else
@@ -647,9 +648,9 @@ add_process (pid_t pid, pid_t ppid, double time, double memory)
       last_active_process = p;
     }
 
-  debug (type,
-    "%d (parent %d, %.3f sec, %.3f MB)",
-    pid, ppid, time, memory);
+  /* debug (type, */
+  /*   "%d (parent %d, %.3f sec, %.3f MB)", */
+    /* pid, ppid, time, memory); */
 
   p->sampled = num_samples;
 }
@@ -685,14 +686,15 @@ do { \
 
 #define COMM(POS) \
 do { \
-  if (getc (file) != ' ') \
-    FAILED; \
-  if (getc (file) != '(') \
-    FAILED; \
+  if (getc (file) != ' ') FAILED; \
+  if (getc (file) != '(') FAILED; \
   int ch; \
-  while ((ch = getc (file)) != ')') \
-    if (ch == EOF) \
-      FAILED; \
+  int i = 0; \
+  while ((ch = getc (file)) != ')') { \
+    if (ch == EOF) FAILED; \
+    if (i < 1000) name[i++] = ch; \
+  } \
+  name[i] = '\0'; \
   assert (++parsed == (POS)); \
 } while (0)
 
@@ -709,8 +711,8 @@ read_process (long pid)
   parsed = 0;
 #endif
   READ (1, int, rid, "%d");
-  if (rid != pid)
-    FAILED;
+  if (rid != pid) FAILED;
+  char name[1000];
   COMM (2);
   if (getc (file) != ' ')
     FAILED;
@@ -718,7 +720,7 @@ read_process (long pid)
   READ (4, int, ppid, "%d");
   READ (5, int, pgrp, "%d");
   READ (6, int, session, "%d");
-  debug ("read", "pid=%d ppid=%d pgrp=%d session=%d", pid, ppid, pgrp, session);
+  /* debug ("read", "pid=%d ppid=%d pgrp=%d session=%d", pid, ppid, pgrp, session); */
   if (pgrp != pid && pgrp != parent_pid &&
       pgrp != group_pid && session != session_pid)
     FAILED;
@@ -747,11 +749,11 @@ read_process (long pid)
   if (rss < 0)
     FAILED;
   fclose (file);
-  debug ("utime", "%f microseconds", utime);
-  debug ("stime", "%f microseconds", stime);
+  /* debug ("utime", "%f microseconds", utime); */
+  /* debug ("stime", "%f microseconds", stime); */
   const double time = (utime + stime) / (double) clock_ticks;
   const double memory = rss * memory_per_page;
-  add_process (pid, ppid, time, memory);
+  add_process (pid, ppid, time, memory, name);
   return 1;
 }
 
@@ -798,7 +800,7 @@ read_all_processes (void)
       if (pid == parent_pid) continue;
       if (read_process (pid)) res++;
     }
-  
+
   (void) closedir (dir);
   debug ("added", "%ld processes", res);
 
@@ -849,7 +851,7 @@ connect_process_tree (void)
         parent->first_child = parent->last_child = p;
 	assert (!p->next_sibbling);
       }
-      debug ("connect", "%d -> %d", p->ppid, p->pid);
+      /* debug ("connect", "%d -> %d", p->ppid, p->pid); */
       connected++;
     }
 
@@ -938,7 +940,7 @@ sample_recursively (Process * p)
 
       res++;
       debug (type,
-        "%d (%.3f sec, %.3f MB)", p->pid, p->time, p->memory);
+        "%d (%s, %.3f sec, %.3f MB)", p->pid, p->name, p->time, p->memory);
     }
 
   p->cyclic_sampling = 1;
@@ -948,7 +950,7 @@ sample_recursively (Process * p)
 
   assert (p->cyclic_sampling);
   p->cyclic_sampling = 0;
-  
+
   return res;
 }
 
@@ -1081,7 +1083,7 @@ tai_time (void)
 /*------------------------------------------------------------------------*/
 
 static double
-real_time (void) 
+real_time (void)
 {
   double res;
   if (start_time_tai < 0) return -1;
@@ -1143,7 +1145,7 @@ sample_all_child_processes (int s)
   pthread_mutex_lock (&mutex);
   ignore = killing;
   pthread_mutex_unlock (&mutex);
-  
+
   if (ignore) return;
 
   load = sample_load ();
@@ -1169,7 +1171,7 @@ sample_all_child_processes (int s)
   sampled_time += accumulated_time;
 
   if (sampled > 0)
-    { 
+    {
       if (sampled_memory > max_memory)
 	max_memory = sampled_memory;
 
