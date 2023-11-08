@@ -538,7 +538,7 @@ resize_process_hash_table (void)
   if (!size_of_process_hash_table)
     size_of_process_hash_table = 2;
 
-  debug ("resize", "%zu", size_of_process_hash_table);
+  /* debug ("resize", "%zu", size_of_process_hash_table); */
 
   process_hash_table =
     calloc (size_of_process_hash_table, sizeof (Process));
@@ -576,7 +576,7 @@ find_process (int pid)
       return res;
     }
 
-  debug ("insert", "%d", pid);
+  /* debug ("insert", "%d", pid); */
 
   res = malloc (sizeof * res);
   if (!res)
@@ -802,7 +802,7 @@ read_all_processes (void)
     }
 
   (void) closedir (dir);
-  debug ("added", "%ld processes", res);
+  /* debug ("added", "%ld processes", res); */
 
   return res;
 }
@@ -855,7 +855,7 @@ connect_process_tree (void)
       connected++;
     }
 
-  debug ("connected", "%ld processes", connected);
+  /* debug ("connected", "%ld processes", connected); */
 }
 
 /*------------------------------------------------------------------------*/
@@ -900,7 +900,7 @@ flush_inactive_processes (void)
 
   last_active_process = prev;
 
-  debug ("flushed", "%ld processes", res);
+  /* debug ("flushed", "%ld processes", res); */
 
   return res;
 }
@@ -911,6 +911,7 @@ static double sampled_time;
 static double sampled_memory;
 
 /*------------------------------------------------------------------------*/
+int toprint = 0;
 
 static long
 sample_recursively (Process * p)
@@ -939,8 +940,7 @@ sample_recursively (Process * p)
       sampled_memory += p->memory;
 
       res++;
-      debug (type,
-        "%d (%s, %.3f sec, %.3f MB)", p->pid, p->name, p->time, p->memory);
+      if (toprint % 30 == 0) debug (type, "%d (%s, %.3f sec, %.3f MB)", p->pid, p->name, p->time, p->memory);
     }
 
   p->cyclic_sampling = 1;
@@ -1159,13 +1159,14 @@ sample_all_child_processes (int s)
 
   if (read > 0)
     {
+  toprint++;
       p = find_process (child_pid);
       sampled = sample_recursively (p);
     }
   else
     sampled = 0;
 
-  debug ("sampled", "%ld processes", sampled);
+  /* debug ("sampled", "%ld processes", sampled); */
 
   sampled += flush_inactive_processes ();
   sampled_time += accumulated_time;
